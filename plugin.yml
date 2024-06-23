@@ -1,0 +1,25 @@
+---
+name: BossFight
+version: 0.0.1
+main: Lay\BossFight\BossFight
+api: 5.16.0
+commands:
+  boss:
+    description: "spawn boss"
+    usage: "/boss"
+    permission: bossperm
+  worldg:
+    description: "generated void world"
+    usage: "/worldg"
+    permission: bossperm
+  setstone:
+    description: "sets stone at 0 64 0"
+    usage: "/setstone"
+    permission: bossperm
+  bossfight:
+    description: "sets stone at 0 64 0"
+    usage: "/setstone"
+    permission: bossperm
+permissions:
+  bossperm:
+    default: op
