@@ -9,13 +9,13 @@ use pocketmine\nbt\tag\CompoundTag;
 
 abstract class BossMinion extends Living {
 
-    public function __construct(Location $location, ?CompoundTag $tag = null, protected ?MinionSpawns $minionAttack = null){
+    public function __construct(Location $location, ?CompoundTag $tag = null){
         parent::__construct($location, $tag);
     }
 
-    protected function onDeath(): void{
-        if($this->minionAttack)
-            $this->minionAttack->killMinion($this);
-    }
+    // protected function onDeath(): void{
+    //     if($this->minionAttack)
+    //         $this->minionAttack->killMinion($this);
+    // }
 
 }
