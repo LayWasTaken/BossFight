@@ -20,6 +20,7 @@ abstract class BossFightInstance {
     const NORMAL = 2;
     const EASY = 1;
     
+    const TEMP_TAG = "temp-";
 
     private ?BossEntity $boss = null;
 
@@ -84,7 +85,7 @@ abstract class BossFightInstance {
     }
 
     private function setUniqueNameDuplicateWorld(string $world, array &$worlds){
-        $uuid = Uuid::uuid4()->toString();
+        $uuid = self::TEMP_TAG . Uuid::uuid4()->toString();
         if(!!array_filter($worlds, fn($id) => $uuid == $id)) return $this->setUniqueNameDuplicateWorld($world, $worlds);;
         WorldUtils::duplicateWorld($world, $uuid);
         $this->id = $uuid;
