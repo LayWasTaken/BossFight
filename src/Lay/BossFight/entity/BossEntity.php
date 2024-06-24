@@ -25,11 +25,6 @@ abstract class BossEntity extends Living{
 
     protected AttackManager $attackManager;
 
-    /**
-     * @var DelayedAttack[][]
-     */
-    private array $delayedAttacks = [];
-
     public function __construct(Location $location, ?CompoundTag $nbt = null, ?BossFightInstance $instance = null){
         parent::__construct($location, $nbt);
         $this->attackManager = $this->attackManager ?? new AttackManager;
@@ -76,17 +71,7 @@ abstract class BossEntity extends Living{
     protected function entityBaseTick(int $tickDiff = 1): bool{
         if(!$this->active) return parent::entityBaseTick($tickDiff);
         $this->sendBossBar($this->getName());
-        $attacksLeft = [];
-        foreach ($this->delayedAttacks as $ticks => $attacks) {
-            if($ticks > $this->ticksLived) break;
-            unset($this->delayedAttacks[$ticks]); 
-            foreach ($attacks as $attack) {
-                $attack->next();
-                $this->addDelayedAttack($attack, true);
-            }
-        }
-        ksort($this->delayedAttacks);
-        $this->delayedAttacks = $attacksLeft;
+        $this->manageDelayedAttacks();
         $this->onAttackTick();
 		return parent::entityBaseTick($tickDiff);
     }
@@ -98,21 +83,17 @@ abstract class BossEntity extends Living{
         }), 20 * 4);
     }
 
+    private function manageDelayedAttacks(){
+        foreach($this->attackManager->getDelayedAttacks() as $key => $attack){
+            $attack->attack();
+            if($attack->isFinished()) $this->attackManager->removeDelayedAttack($key);
+        }
+    }
+
     /**
      * Called when a specific tick for the Boss to attack is called
      */
     protected function onAttackTick(): void { }
-
-    protected function addDelayedAttack(DelayedAttack $delayedAttack, bool $skipSort = false){
-        $current = $delayedAttack->currentTicks($this->ticksLived);
-        if($current <= 0) return;
-        $this->delayedAttacks[$current][] = $delayedAttack;
-        if(!$skipSort) ksort($this->delayedAttacks);
-    }
-
-    protected function specialAttack(){
-
-    }
 
     /**
      * On each tick the specified AABB range will check if the players changed from last check
