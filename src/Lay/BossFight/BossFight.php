@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lay\BossFight;
 
+use Lay\BossFight\bossfight\BossFightInstance;
 use Lay\BossFight\bossfight\BossFightManager;
 use Lay\BossFight\bossfight\instances\TestBoss;
 use Lay\BossFight\entity\Zombie;
@@ -23,7 +24,6 @@ use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\world\generator\GeneratorManager;
-use pocketmine\world\Position;
 use pocketmine\world\World;
 use pocketmine\world\WorldCreationOptions;
 use Ramsey\Uuid\Uuid;
@@ -45,6 +45,9 @@ class BossFight extends PluginBase{
 
     public function onEnable():void {
         $this->getServer()->getPluginManager()->registerEvents(new WorldsListener, $this);
+        foreach (WorldUtils::getAllWorlds() as $worldName) {
+            if(str_contains($worldName, BossFightInstance::TEMP_TAG)) WorldUtils::removeWorld($worldName);
+        }
     }
 
     public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool{
