@@ -29,8 +29,9 @@ class BasicDamageAttack extends BaseAttack{
         return $this;
     }
     
-    public function setTargets(Entity ...$targets){
+    public function setTargets(array $targets){
         $this->targets = $targets;
+        return $this;
     }
 
     public function attack(): void{

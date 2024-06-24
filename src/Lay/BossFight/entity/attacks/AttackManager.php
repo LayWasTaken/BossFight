@@ -4,71 +4,65 @@ namespace Lay\BossFight\entity\attacks;
 
 final class AttackManager {
 
-    /** @var BaseAttack[] $attacks All the attacks*/
-    private array $attacks = [];
+    private const HALT_KEY = "halt";
 
-    /** @var BaseAttack[] $attackPool How frequent these attacks are */
-    private array $attackPool = [];
+    private int $cooldown = 0;
+    private bool $freeze = false;
 
-    /**
-     * @var int[]
-     */
-    private array $attacksOnCooldown = [];
+    /**@var DelayedAttack[] $delayedAttacks */
+    private array $delayedAttacks = [];
 
     public static function create(){ return new self; }
 
     public function __construct(){}
 
-    public function setAttack(string $id, BaseAttack $attack){
-        $this->attacks[$id] = $attack;
-        return $this;
+    /**
+     * Recommend to call AttackManager::isAvailable() before calling this
+     * @param bool $skipCooldown Set true to directly skip the cooldown and directly call the attack
+     */
+    public function callAttack(BaseAttack $attack, int $cooldown = 0, bool $skipCooldown = false){
+        if($this->freeze) return false;
+        if((!$skipCooldown) && (!$this->isOnCooldown())) return false;
+        $this->cooldown = time() + $cooldown;
+        $attack->attack();
+        return true;
+    }
+
+    public function isOnCooldown(){
+        return $this->cooldown <= time();
+    }
+
+    public function isAvailable(){
+        return $this->freeze ? false : $this->isOnCooldown();
+    }
+
+    private function setFreeze(bool $freeze){
+        $this->freeze = $freeze;
     }
 
     /**
-     * @param string $id
-     * @param bool $skipCooldown If tue it will check if the attack is available
-     * @return ?BaseAttack
+     * @param bool $haltSequence - If true then all other attacks will not be called, except for other delayed attacks
      */
-    public function getAttack(string $id, bool $skipCooldown = true){
-        if(!$this->attackExists($id)) return null;
-        if($skipCooldown) return $this->attacks[$id];
-        $this->updateCooldown();
-        return array_key_exists($id, $this->attacksOnCooldown) ? null : $this->attacks[$id];
-    }
-
-    /**
-     * Returns a random available attack that is not on Cooldown
-     */
-    public function getAvailableAttack(){
-        $this->updateCooldown();
-        return array_rand(array_diff_key($this->attacks, $this->attacksOnCooldown));
-    }
-
-    public function isAttackOnCooldown(string $id){
-        $this->updateCooldown();
-        return array_key_exists($id, $this->attacksOnCooldown);
-    }
-
-    public function updateCooldown(){
-        $time = time();
-        ksort($this->attacksOnCooldown);
-        foreach ($this->attacksOnCooldown as $id) {
-            $cooldown = $this->attacksOnCooldown[$id];
-            if($cooldown > $time) return;
-            unset($this->attacksOnCooldown[$id]);
+    public function addDelayedAttack(DelayedAttack $delayedAttack, bool $haltSequence = false){
+        if(!$this->isAvailable()) return false;
+        if($haltSequence){
+            $this->setFreeze(true);
+            $this->delayedAttacks[self::HALT_KEY] = $delayedAttack;
+        }else{
+            $this->delayedAttacks[] = $delayedAttack;
         }
+        return true;
     }
 
-    public function attackExists(string $id){
-        return array_key_exists($id, $this->attacks);
+    public function removeDelayedAttack(int|string $key){
+        if(!array_key_exists($key, $this->delayedAttacks)) return false;
+        unset($this->delayedAttacks[$key]);
+        if($key == self::HALT_KEY) $this->setFreeze(false);
+        return true;
     }
 
-    /**
-     * If the attack is already in cooldown it will override it
-     */
-    public function setCooldown(string $id, int $cooldown = 1){
-        if(!$this->attackExists($id)) return false;
-        return $this->attacksOnCooldown[$id] = time() + $cooldown;
+    public function getDelayedAttacks(){
+        return $this->delayedAttacks;
     }
 
 }
