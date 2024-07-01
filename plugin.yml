@@ -1,7 +1,7 @@
 ---
 name: BossFight
 version: 0.0.1
-main: Lay\BossFight\BossFight
+main: Lay\BossFight\Loader
 api: 5.16.0
 commands:
   boss:
@@ -17,8 +17,8 @@ commands:
     usage: "/setstone"
     permission: bossperm
   bossfight:
-    description: "sets stone at 0 64 0"
-    usage: "/setstone"
+    description: "Boss Fight"
+    usage: "/bossfight"
     permission: bossperm
 permissions:
   bossperm:
