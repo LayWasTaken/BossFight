@@ -2,13 +2,12 @@
 
 namespace Lay\BossFight\entity;
 
-use Lay\BossFight\BossFight;
+use Lay\BossFight\Loader;
 use pocketmine\entity\Living;
 use pocketmine\network\mcpe\protocol\BossEventPacket;
 use pocketmine\player\Player;
 use Lay\BossFight\bossfight\BossFightInstance;
 use Lay\BossFight\entity\attacks\AttackManager;
-use Lay\BossFight\entity\attacks\DelayedAttack;
 use Lay\BossFight\tasks\InitializeBossBar;
 use pocketmine\entity\Location;
 use pocketmine\nbt\tag\CompoundTag;
@@ -16,12 +15,11 @@ use pocketmine\scheduler\ClosureTask;
 
 abstract class BossEntity extends Living{
 
-    private const ATTACK_TICKS = 5;
-    private const AREA_CHECK_TICKS = 3;
-
     private $active = false;
     private ?BossFightInstance $instance = null;
     private bool $invincible = false;
+
+    private bool $showBossBar = false;
 
     protected AttackManager $attackManager;
 
@@ -29,6 +27,20 @@ abstract class BossEntity extends Living{
         parent::__construct($location, $nbt);
         $this->attackManager = $this->attackManager ?? new AttackManager;
         $this->instance = $instance;
+        $this->setMaxHealth($this->getBaseHealth());
+        $this->setHealth($this->getBaseHealth());
+    }
+
+    public function getBossFightInstance(){
+        return $this->instance;
+    }
+
+    public function showBossBar(bool $show = true){
+        $this->showBossBar = $show;
+    }
+
+    public function canShowBossBar(){
+        return $this->showBossBar;
     }
 
     public function start(bool $skipBossFightInstance = false): bool{
@@ -36,23 +48,22 @@ abstract class BossEntity extends Living{
             if(!$this->instance) return false;
 
         $this->active = true;
-        $this->sendBossBar();
         return true;
     }
 
     public function startInitializeBossBar(){
-        $this->setMaxHealth(200);
-        $this->setHealth(200);
-        BossFight::getInstance()->getScheduler()->scheduleRepeatingTask(new InitializeBossBar($this, $this->getName()), 10);
+        Loader::getInstance()->getScheduler()->scheduleRepeatingTask(new InitializeBossBar($this, $this->getName()), 20);
     }
 
     public function sendBossBar(string $text = "", ?float $health = null){
         $world = $this->getWorld();
         foreach($world->getPlayers() as $player){
             $session = $player->getNetworkSession();
-            $session->sendDataPacket(BossEventPacket::show($this->getId(), $text ?? $this->getName(), $this->getHealthPercentage()));
-            $session->sendDataPacket(BossEventPacket::title($this->getId(), $text ?? $this->getName()), true);
-            $session->sendDataPacket(BossEventPacket::healthPercent($this->getId(), $health ?? $this->getHealthPercentage()), true);
+            if($this->showBossBar){
+                $session->sendDataPacket(BossEventPacket::show($this->getId(), $text ?? $this->getName(), $this->getHealthPercentage()));
+                $session->sendDataPacket(BossEventPacket::title($this->getId(), $text ?? $this->getName()), true);
+                $session->sendDataPacket(BossEventPacket::healthPercent($this->getId(), $health ?? $this->getHealthPercentage()), true);
+            }else $session->sendDataPacket(BossEventPacket::hide($this->getId()));
         }
     }
 
@@ -78,9 +89,8 @@ abstract class BossEntity extends Living{
 
     protected function onDeath(): void{
         parent::onDeath();
-        if($instance = $this->instance) BossFight::getInstance()->getScheduler()->scheduleDelayedTask(new ClosureTask(function() use ($instance){
+        if($instance = $this->instance) 
             $instance->finish();
-        }), 20 * 4);
     }
 
     private function manageDelayedAttacks(){
