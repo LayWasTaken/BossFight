@@ -2,8 +2,8 @@
 
 namespace Lay\BossFight\bossfight;
 
+use Lay\BossFight\Loader;
 use pocketmine\player\Player;
-use pocketmine\Server;
 
 final class BossFightManager {
 
@@ -15,9 +15,9 @@ final class BossFightManager {
     private static array $instances = [];
 
     /**
-     * @var BossFightInstance[] Players xuid will be used to identify their active instance
+     * @var PlayerSession[] Players UUID will be used to identify their active instance
      */
-    private static array $playersActiveInstance = [];
+    private static array $playerSessions = [];
 
     public static function getInstances(string $class): array{
         return array_filter(self::$instances, fn($instance) => $class == $instance::class);
@@ -31,77 +31,68 @@ final class BossFightManager {
         return array_key_exists($id, self::$instances);
     }
 
-    public static function addInstance(BossFightInstance $instance):bool {
-        $max = $instance::getMaxInstances();
-        if(count(self::$instances) == $max || array_key_exists($instance->getId(), self::$instances)){
-            $instance->cancel();
-            return false;
-        }
-        foreach ($instance->getPlayers() as $player) {
-            if(self::playerHasActiveInstance($player)) {
-                $instance->cancel();
-                return false;
-            }
-        }
-        foreach ($instance->getPlayers() as $player) {
-            self::$playersActiveInstance[$player->getUniqueId()->toString()] = $instance;
-        }
+    public static function addInstance(BossFightInstance $instance){
+        if(self::instanceExists($instance->getId())) return false;
         self::$instances[$instance->getId()] = $instance;
         return true;
     }
 
-    public static function finishInstance(string $id): bool{
-        $instance = self::getInstance($id);
-        if(!$instance) return false;
-        $instance->finish();
-        foreach ($instance->getPlayers() as $player) {
-            self::removePlayerActiveInstance($player);
-        }
-        self::removeInstance($instance->getId());
-        return true;
-    }
-
-    public static function cancelInstance(string $id): bool{
-        $instance = self::getInstance($id);
-        if(!$instance) return false;
-        $instance->cancel();
-        self::removeInstance($instance->getId());
-        return true;
-    }
-
-    public static function removeInstance(string $id): bool{
-        if(!array_key_exists($id, self::$instances)) return false;
+    /**Should only be called inside the instance itself */
+    public static function removeInstance(BossFightInstance|string $instance){
+        $id = $instance instanceof BossFightInstance ? $instance->getId() : $instance;
+        if(!self::instanceExists($id)) return false;
         $instance = self::$instances[$id];
-        foreach ($instance->getPlayers() as $player) {
-            self::removePlayerActiveInstance($player);
-        }
         unset(self::$instances[$id]);
-        return false;
-    }
-
-    public static function playerHasActiveInstance(Player|string $player): bool{
-        return array_key_exists($player instanceof Player ? $player->getUniqueId()->toString() : $player, self::$playersActiveInstance);
-    }
-
-    public static function removePlayerActiveInstance(Player|string $player): bool{
-        if(!self::playerHasActiveInstance($player)) return false;
-        unset(self::$playersActiveInstance[$player->getUniqueId()->toString()]);
+        $sessions = $instance->getPlayerSessions();
+        if(count($sessions) > 0) foreach($sessions as $session){
+            $instance->removePlayer($session);
+        }
         return true;
     }
 
-    public static function addPlayerToInstance(Player|string $player, string $instanceID): bool{
-        if(self::playerHasActiveInstance($player)) return false;
-        if((!($player instanceof Player) && !($player = Server::getInstance()->getPlayerByRawUUID($player)))) return false;
-        if(array_key_exists($instanceID, self::$instances)) return false;
-        self::$instances[$instanceID] = $player;
+    public static function playerHasSession(Player|string $player): bool{
+        return array_key_exists($player instanceof Player ? $player->getUniqueId()->toString() : $player, self::$playerSessions);
+    }
+
+    public static function removePlayerSession(Player|string $player): bool{
+        if(!self::playerHasSession($player)) return false;
+        unset(self::$playerSessions[$player instanceof Player ? $player->getUniqueId()->toString() : $player]);
         return true;
+    }
+
+    /**Returns false if it already exists */
+    public static function createPlayerSession(Player $player): ?PlayerSession{
+        if(self::playerHasSession($player)) return null;
+        return self::$playerSessions[$player->getUniqueId()->toString()] = new PlayerSession($player);
+    }
+
+    public static function getPlayerSession(Player|string $player):? PlayerSession{
+        if(!self::playerHasSession($player)) return null;
+        return self::$playerSessions[$player instanceof Player ? $player->getUniqueId()->toString() : $player];
+    }
+
+    /**Clears any inactive sessions*/
+    public static function cleanSessions(){
+        $db = Loader::getInstance()->getDB();
+        foreach (self::$playerSessions as $id => $session) {
+            if($session->isOnline()) continue;
+            $db->executeInsert("rewardsbuffer", ["player" => $id, "data" => $session->writeRewards()]);
+            unset(self::$playerSessions[$id]);
+        }
+    }
+
+    public static function saveAllSessions(){
+        $db = Loader::getInstance()->getDB();
+        foreach (self::$playerSessions as $id => $session) {
+            $db->executeInsert("rewardsbuffer.save", ["player" => $id, "data" => $session->writeRewards()]);
+        }
     }
 
     public static function query(){
-        echo "Instances\n";
+        echo "sessions\n";
+        print_r(array_keys(self::$playerSessions));
+        echo "instances\n";
         print_r(array_keys(self::$instances));
-        echo "\nPlayerInstances";
-        print_r(array_keys(self::$playersActiveInstance));
     }
 
 }
