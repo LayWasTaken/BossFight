@@ -19,7 +19,6 @@ final class InitializeBossBar extends Task {
     }
 
     public function onRun(): void{
-        echo "text\n";
         if(!$this->boss->isAlive()) {
             $this->getHandler()->cancel();
             return;
@@ -30,7 +29,7 @@ final class InitializeBossBar extends Task {
             $this->getHandler()->cancel();
             return;
         }
-        $this->boss->sendBossBar($text ?? $this->getName());
+        $this->boss->sendBossBar($text);
     }
 
     private function getNewText():string|false {
