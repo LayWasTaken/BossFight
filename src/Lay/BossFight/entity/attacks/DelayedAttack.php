@@ -13,23 +13,24 @@ abstract class DelayedAttack extends BaseAttack {
 
     public function __construct(Entity $source){
         parent::__construct($source);
-        $this->sequence = $this->getAttackSequence();
+        $this->sequence = $this->attackSequence();
     }
 
-    protected abstract function getAttackSequence(): \Generator;
+    protected abstract function attackSequence(): \Generator;
 
     public function isFinished(){
-        return !$this->sequence->valid();
+        return $this->sequence->valid() ? !!$this->sequence->current() : true;
     }
     
     public function attack(): void{
         if($this->isFinished()) return;
-        if(--$this->ticks > 0) return;
+        if($this->ticks-- > 0) return;
+        echo "attacked\n";
         $this->sequence->next();
         $current = $this->sequence->current();
         if(!is_null($current)) {
             if(!is_int($current)) throw new AssumptionFailedError("The yield must be an integer");
-            $this->sequence = $current;
+            $this->ticks = $current;
         }
     }
 }

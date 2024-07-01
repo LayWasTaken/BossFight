@@ -4,7 +4,7 @@ namespace Lay\BossFight\entity\attacks;
 
 final class AttackManager {
 
-    private const HALT_KEY = "halt";
+    const HALT_KEY = "halt";
 
     private int $cooldown = 0;
     private bool $freeze = false;
@@ -29,11 +29,11 @@ final class AttackManager {
     }
 
     public function isOnCooldown(){
-        return $this->cooldown <= time();
+        return $this->cooldown > time();
     }
 
     public function isAvailable(){
-        return $this->freeze ? false : $this->isOnCooldown();
+        return $this->freeze ? false : !$this->isOnCooldown();
     }
 
     private function setFreeze(bool $freeze){
@@ -43,8 +43,9 @@ final class AttackManager {
     /**
      * @param bool $haltSequence - If true then all other attacks will not be called, except for other delayed attacks
      */
-    public function addDelayedAttack(DelayedAttack $delayedAttack, bool $haltSequence = false){
+    public function addDelayedAttack(DelayedAttack $delayedAttack, int $cooldown = 0, bool $haltSequence = false){
         if(!$this->isAvailable()) return false;
+        $this->cooldown = $cooldown;
         if($haltSequence){
             $this->setFreeze(true);
             $this->delayedAttacks[self::HALT_KEY] = $delayedAttack;
