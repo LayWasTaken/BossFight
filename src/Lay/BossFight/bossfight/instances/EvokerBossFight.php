@@ -13,7 +13,6 @@ use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\types\entity\PropertySyncData;
-use pocketmine\Server;
 use pocketmine\utils\TextFormat;
 use SOFe\AwaitGenerator\Await;
 use SOFe\Zleep\Zleep;
@@ -49,7 +48,7 @@ final class EvokerBossFight extends BossFightInstance {
     }
 
     public function getSafeSpawn(): Vector3{
-        return new Vector3(-1, 65, -1);
+        return new Vector3(-.5, 65, -.5);
     }
 
     public function getTimeLimit(): int{
@@ -64,7 +63,7 @@ final class EvokerBossFight extends BossFightInstance {
                 foreach ($world->getPlayers() as $player) {
                     $player->sendMessage(TextFormat::RESET . TextFormat::GREEN . "Storm, earth and fire" );
                 }
-                yield from Zleep::sleepTicks(Loader::getInstance(), 20 * 2);
+                yield from Zleep::sleepTicks(Loader::getInstance(), 20 * 5);
                 $center = $boss->getChestSpawn();
                 $lightnings = [$center->add(2, 0, 2), $center->add(-2, 0, -2), $center->add(-2, 0, 2), $center->add(2, 0, -2)];
                 foreach($lightnings as $vector) { 
@@ -82,7 +81,6 @@ final class EvokerBossFight extends BossFightInstance {
         });
         $this->getBoss()->spawnToAll();
         $this->getBoss()->showBossBar();
-        $this->getBoss()->startInitializeBossBar();
     }
 
 }
