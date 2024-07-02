@@ -2,6 +2,7 @@
 
 namespace Lay\BossFight\listener;
 
+use Lay\BossFight\bossfight\BossFightInstance;
 use Lay\BossFight\Loader;
 use Lay\BossFight\bossfight\BossFightManager;
 use Lay\BossFight\util\BinaryStringParser;
@@ -39,7 +40,7 @@ final class PlayerListener implements Listener {
         $player = $event->getPlayer();
         if(!$session = BossFightManager::getPlayerSession($player)) return;
         if(!$instance = $session->getActiveInstance()) return;
-        if($instance->isActive()) return;
+        if($instance->getCurrentState() != BossFightInstance::ENTERED) return;
         if(!$instance->getWorld()) return;
         if($instance->getId () != $player->getWorld()->getFolderName()) return;
         if($instance->getSafeArea()->intersectsWith($player->boundingBox)) return;
