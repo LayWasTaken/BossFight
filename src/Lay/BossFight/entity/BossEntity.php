@@ -2,30 +2,22 @@
 
 namespace Lay\BossFight\entity;
 
-use Lay\BossFight\Loader;
-use pocketmine\entity\Living;
 use pocketmine\network\mcpe\protocol\BossEventPacket;
-use pocketmine\player\Player;
 use Lay\BossFight\bossfight\BossFightInstance;
-use Lay\BossFight\entity\attacks\AttackManager;
-use Lay\BossFight\tasks\InitializeBossBar;
 use pocketmine\entity\Location;
 use pocketmine\nbt\tag\CompoundTag;
-use pocketmine\scheduler\ClosureTask;
 
-abstract class BossEntity extends Living{
+abstract class BossEntity extends BehavioralEntity{
 
     private $active = false;
     private ?BossFightInstance $instance = null;
-    private bool $invincible = false;
 
     private bool $showBossBar = false;
-
-    protected AttackManager $attackManager;
+    protected array $initialBossName = [];
+    private float $bossHealthAnimation = 0;
 
     public function __construct(Location $location, ?CompoundTag $nbt = null, ?BossFightInstance $instance = null){
         parent::__construct($location, $nbt);
-        $this->attackManager = $this->attackManager ?? new AttackManager;
         $this->instance = $instance;
         $this->setMaxHealth($this->getBaseHealth());
         $this->setHealth($this->getBaseHealth());
@@ -46,17 +38,22 @@ abstract class BossEntity extends Living{
     public function start(bool $skipBossFightInstance = false): bool{
         if(!$skipBossFightInstance) 
             if(!$this->instance) return false;
-
         $this->active = true;
         return true;
     }
 
-    public function startInitializeBossBar(){
-        Loader::getInstance()->getScheduler()->scheduleRepeatingTask(new InitializeBossBar($this, $this->getName()), 20);
-    }
-
     public function sendBossBar(string $text = "", ?float $health = null){
         $world = $this->getWorld();
+        if(!empty($this->initialBossName)){
+            $this->invulnerable();
+            if($this->ticksLived % 10) return;
+            $text = array_shift($this->initialBossName);
+        }
+        elseif($this->bossHealthAnimation <= 1){
+            if($this->ticksLived % 3) return;
+            $health = $this->bossHealthAnimation += 0.1;
+            if($this->bossHealthAnimation >= 1) $this->invulnerable(false);
+        }
         foreach($world->getPlayers() as $player){
             $session = $player->getNetworkSession();
             if($this->showBossBar){
@@ -67,14 +64,6 @@ abstract class BossEntity extends Living{
         }
     }
 
-    public function isInvincible(): bool{
-        return $this->invincible;
-    }
-
-    public function setInvincibility(bool $invincible){
-        $this->invincible = $invincible;
-    }
-
     private function getHealthPercentage(){
         return $this->getHealth() / $this->getMaxHealth();
     }
@@ -82,8 +71,6 @@ abstract class BossEntity extends Living{
     protected function entityBaseTick(int $tickDiff = 1): bool{
         if(!$this->active) return parent::entityBaseTick($tickDiff);
         $this->sendBossBar($this->getName());
-        $this->manageDelayedAttacks();
-        $this->onAttackTick();
 		return parent::entityBaseTick($tickDiff);
     }
 
@@ -92,26 +79,6 @@ abstract class BossEntity extends Living{
         if($instance = $this->instance) 
             $instance->finish();
     }
-
-    private function manageDelayedAttacks(){
-        foreach($this->attackManager->getDelayedAttacks() as $key => $attack){
-            $attack->attack();
-            if($attack->isFinished()) $this->attackManager->removeDelayedAttack($key);
-        }
-    }
-
-    /**
-     * Called when a specific tick for the Boss to attack is called
-     */
-    protected function onAttackTick(): void { }
-
-    /**
-     * On each tick the specified AABB range will check if the players changed from last check
-     * @param Player[] $players
-     */
-    public function onNearbyPlayersUpdate(array $players){}
-
-    public abstract function getBaseAttackDamage(): int;
 
     public abstract function getBaseHealth(): int;
 
