@@ -113,9 +113,7 @@ final class PlayerSession {
     }
 
     public function exitInstance(?Position $position = null){
-        $player = $this->getPlayer();
-        if(!$player) return;
-        $player->teleport(($position ?? $this->lastLocation) ?? WorldUtils::getDefaultWorldNonNull()->getSafeSpawn());
+        $this->getPlayer()?->teleport(($position ?? $this->lastLocation) ?? WorldUtils::getDefaultWorldNonNull()->getSafeSpawn());
         $this->battleTimestamp(self::NEW);
         $this->leaveInstance();
     }

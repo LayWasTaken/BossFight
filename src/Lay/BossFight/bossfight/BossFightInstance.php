@@ -8,6 +8,9 @@ use Lay\BossFight\entity\BossEntity;
 use Lay\BossFight\Loader;
 use Lay\BossFight\util\WorldUtils;
 use pocketmine\block\VanillaBlocks;
+use pocketmine\entity\effect\EffectInstance;
+use pocketmine\entity\effect\SlownessEffect;
+use pocketmine\entity\effect\VanillaEffects;
 use pocketmine\math\AxisAlignedBB;
 use pocketmine\math\Vector3;
 use pocketmine\Server;
@@ -21,24 +24,37 @@ use SOFe\Zleep\Zleep;
 abstract class BossFightInstance {
 
     const TEMP_TAG = "temp-";
-    const DEFAULT_POST_FINISH_TIME_LIMIT = 120;
+    private const DEFAULT_POST_FINISH_TIME_LIMIT = 180;
 
     private const NORMAL_RANGE = 180;
     private const MEDIUM_RANGE = 120;
 
+    // BOSS FIGHT STATES
+
+    // The initial creation of the instance, the leader creating this instance and the same time inviting others
+    public const INITIAL = 0;
+    // Entered is where the players has entered the arena and has doubled down to fight the boss, though the world must be generated first
+    public const ENTERED = 1;
+    // Fighting the players left the safe zone and entered the battle
+    public const FIGHTING = 2;
+
+    // This is where the players won the fight, received the items and such, with a 3 mins grace period to receive the items and leave
+    public const SUCCESSFUL = 5;
+    // If the fight failed by time limit and/or all players die then the instance will be removed after 5-10 seconds(to be more obvious to the players). 
+    public const FAILED = 6;
+
+    // This is if the battled got canceled 
+    public const CANCELED = 7;
+
     private string $id = "";
     private ?World $world = null;
-    private bool $active = false;
 
-    /**Checks if the fight has successfully finished */
-    private bool $finished = false;
+    private int $state = 0;
 
     private BossEntity $boss;
 
     /**@var PlayerSession[] $players */
     private array $players = [];
-
-    private int $timeLeft = 0;
 
     /**
      * @throws AssumptionFailedError if leader cannot create it
@@ -50,6 +66,7 @@ abstract class BossFightInstance {
         $this->generateUUID($worlds);
         $this->players[$leader->getId()] = $leader;
         $leader->joinInstance($this);
+        $this->state = 0;
         BossFightManager::addInstance($this);
     }
 
@@ -75,27 +92,32 @@ abstract class BossFightInstance {
         $this->world = Server::getInstance()->getWorldManager()->getWorldByName($this->id);
     }
 
+    public function getCurrentState(){
+        return $this->state;
+    }
+
     /**Called after a player exited the safe area */
     public function startBattle(){
-        $this->active = true;
         $this->boss = $this->initBoss();
-        Await::g2c($this->bossTimer());
+        $this->boss->start();
+        Await::g2c($this->startBossTimer());
+        $this->state = self::FIGHTING;
         $this->onStart();
     }
 
     /**Will kill the boss if it still alive */
     public function finish(){
-        if($this->finished) return;
-        $this->finished = true;
+        $this->state = self::SUCCESSFUL;
         $this->getWorld()->setBlock($this->getChestSpawn(), VanillaBlocks::CHEST());
         foreach ($this->players as $session) {
             $session->setRewardItems($this->getDrops());
         }
         if(isset($this->boss)) if($this->boss->isAlive()) $this->boss->kill();
         $this->onFinish();
+        Await::g2c($this->startFinishedTimer());
     }
 
-    /**Cancels everything and kicks all the players inside, depending on the onCancel, the player can be compensated */
+    /**Cancels everything and kicks all the players inside, generally for just cleaning up everything*/
     public function cancel(?string $cancelMessage = null){
         foreach ($this->players as $session) {
             $cancelMessage ? $session->getPlayer()?->sendMessage($cancelMessage) : null;
@@ -103,7 +125,6 @@ abstract class BossFightInstance {
             $session->exitInstance();
         }
         $this->clear();
-        $this->onCancel();
     }
 
     protected function clear(){
@@ -113,24 +134,40 @@ abstract class BossFightInstance {
     }
 
     // Should be called on finish
-    private function startKickTimer(){
-
-    }
-
-    private function bossTimer(): Generator{
-        $this->timeLeft = $this->getTimeLimit();
+    private function startFinishedTimer(): Generator{
+        $time = self::DEFAULT_POST_FINISH_TIME_LIMIT;
         try {
-            while ($this->timeLeft > 0) {
-                if($this->finished) return;
+            while ($time > 0) {
+                if($this->state !== self::SUCCESSFUL) return;
                 foreach ($this->getPlayerSessions() as $session) {
-                    $session->getPlayer()?->sendActionBarMessage($this->timerFormat($this->timeLeft, "Time Left "));
+                    $session->getPlayer()?->sendActionBarMessage($this->timerFormat($time--, "Will Kick After "));
                 }
                 yield from Zleep::sleepTicks(Loader::getInstance(), 20);
-                $this->timeLeft--;
             }
             $this->cancel("Time Limit Reached");
         } catch (\Throwable $th) {
             $this->cancel();
+        }
+    }
+
+    private function startBossTimer(): Generator{
+        $time = $this->getTimeLimit();
+        try {
+            while (true) {
+                if($time <= 0){
+                    foreach ($this->getPlayerSessions() as $session) {
+                        $session->getPlayer()?->sendActionBarMessage(TextFormat::RESET . TextFormat::RED . "--THE BOSS HAS BEEN ENRAGED--");
+                    }
+                    continue;
+                }
+                if($this->state >= self::SUCCESSFUL) return;
+                foreach ($this->getPlayerSessions() as $session) {
+                    $session->getPlayer()?->sendActionBarMessage($this->timerFormat($time--, "Time Left "));
+                }
+                yield from Zleep::sleepTicks(Loader::getInstance(), 20);
+            }
+        } catch (\Throwable $th) {
+            $this->cancel("Something went wrong");
         }
     }
 
@@ -146,27 +183,30 @@ abstract class BossFightInstance {
      * Called when all players accepted and joined the world
      * If there are no players then the instance will be removed
      */
-    public function start(){
+    public function enter(){
         if(empty($this->players)) return BossFightManager::removeInstance($this);
         if(!isset($this->world)) $this->initWorld();
         foreach ($this->players as $session) {
             $session->teleportToInstance();
         }
+        $this->state = self::ENTERED;
     }
 
     public function addPlayer(PlayerSession $session){
+        if($this->state >= self::SUCCESSFUL) return;
         if(!$session->canJoin()) {
             if($session->getActiveInstance()?->getId() == $this->getId()) $this->players[$session->getId()] = $session;
             else return $session->getPlayer()?->sendMessage("You cannot join the boss fight");
         }
         $this->players[$session->getId()] = $session;
         $session->joinInstance($this);
+        if($session->getId() == $this->getLeader()->getId()) return $session->getPlayer()?->sendMessage("Boss Fight Managed");
         $session->getPlayer()?->sendMessage("You joined " . $this->getLeader()->getPlayer()->getName() . "'s Boss Fight");
     }
 
     public function removePlayer(PlayerSession $session){
         if(!array_key_exists($session->getId(), $this->players)) return;
-        if($this->world || $this->active) $session->exitInstance();
+        if($this->world || ($this->state == self::ENTERED)) $session->exitInstance();
         else $session->leaveInstance();
         unset($this->players[$session->getId()]);
         if(count($this->players) <= 0) {
@@ -199,10 +239,6 @@ abstract class BossFightInstance {
         return $this->boss;
     }
 
-    public function isActive(){
-        return $this->active;
-    }
-
     public function getLeader(){
         return $this->leader;
     }
@@ -210,11 +246,11 @@ abstract class BossFightInstance {
     /**Called when BossFightInstance::startBattle() is called, Generally used for initial dialog, camera animation, Boss Entity Spawn Animation, Boss Bar initialization*/
     protected function onStart(): void { }
 
-    /**Called on when the Boss Battle has Finished */
+    /**Called when the Boss Battle has Finished */
     protected function onFinish(): void { }
 
-    /**Called if every player Quitted the instance */
-    protected function onCancel(): void { }
+    /**Called when the Boss Battle has Failed*/
+    protected function onFailure(): void { }
 
     /**Should generally be for setting up the boss */
     protected abstract function initBoss(): BossEntity;
