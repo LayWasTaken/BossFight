@@ -10,6 +10,7 @@ use Lay\BossFight\entity\EvokerBoss;
 use Lay\BossFight\bossfight\instances\EvokerBossFight;
 use Lay\BossFight\entity\Zombie;
 use Lay\BossFight\entity\ZombieMinion;
+use Lay\BossFight\listener\EventListener;
 use Lay\BossFight\listener\PlayerListener;
 use Lay\BossFight\util\VoidGenerator;
 use Lay\BossFight\util\WorldUtils;
@@ -46,12 +47,6 @@ final class Loader extends PluginBase{
     public function onLoad():void {
         self::setInstance($this);
         self::$nbtSerializer = new BigEndianNbtSerializer;
-        (EntityFactory::getInstance())->register(Zombie::class, function (World $world, CompoundTag $nbt):Zombie {
-            return new Zombie(EntityDataHelper::parseLocation($nbt, $world));
-        }, ['zombie', 'minecraft:zombie']);
-        (EntityFactory::getInstance())->register(ZombieMinion::class, function (World $world, CompoundTag $nbt):ZombieMinion {
-            return new ZombieMinion(EntityDataHelper::parseLocation($nbt, $world));
-        }, ['zombie_minion']);
         (EntityFactory::getInstance())->register(EvokerBoss::class, function (World $world, CompoundTag $nbt):EvokerBoss {
             return new EvokerBoss(EntityDataHelper::parseLocation($nbt, $world));
         }, ['evoker_boss']);
@@ -62,6 +57,7 @@ final class Loader extends PluginBase{
         if(!InvMenuHandler::isRegistered()) InvMenuHandler::register($this);
         $this->initDB();
         $this->getServer()->getPluginManager()->registerEvents(new PlayerListener($this->getConfig()->get("database")["type"]), $this);
+        $this->getServer()->getPluginManager()->registerEvents(new EventListener(), $this);
         foreach (WorldUtils::getAllWorlds() as $worldName) {
             if(str_contains($worldName, BossFightInstance::TEMP_TAG)) WorldUtils::removeWorld($worldName);
         }
@@ -105,12 +101,6 @@ final class Loader extends PluginBase{
                     $sender->sendMessage("World ".$world->getFolderName()." has been generated.");
                 }), 20);
                 break;
-            case 'boss':
-                $pos = $sender->getPosition();
-                $boss = new Zombie(Location::fromObject($pos, $pos->getWorld()));
-                $boss->spawnToAll();
-                $boss->startInitializeBossBar();
-                break;
             case 'setstone':
                 $sender->getPosition()->getWorld()->setBlockAt(0, 64, 0, VanillaBlocks::STONE());
                 break;
@@ -126,14 +116,18 @@ final class Loader extends PluginBase{
                 }
                 switch ($args[0]) {
                     case 'createinstance':
+                        if(!$session->canJoin()) {
+                            $sender->sendMessage("You cannot join/create another boss fight, either you are in cooldown or within an active boss fight");
+                            return true;
+                        }
                         $bossInstance = new EvokerBossFight([], $session);
                         if(!$bossInstance) {
                             $sender->sendMessage("Something went wrong");
-                            return false;
+                            return true;
                         }
                         $bossInstance->initWorld();
                         $this->getScheduler()->scheduleDelayedTask(new ClosureTask(function() use($bossInstance){
-                            $bossInstance->start();
+                            $bossInstance->enter();
                         }), 20);
                         break;
                     case 'query':
